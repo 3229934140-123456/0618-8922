@@ -8,6 +8,128 @@ async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {
   return json.success ? json.data : json
 }
 
+function toService(row: Record<string, unknown>): Service {
+  return {
+    id: Number(row.id),
+    name: String(row.name ?? ''),
+    category: (row.category as Service['category']) ?? 'portrait',
+    duration: Number(row.duration ?? 0),
+    basePrice: Number(row.base_price ?? row.basePrice ?? 0),
+    depositRate: Number(row.deposit_rate ?? row.depositRate ?? 0.3),
+    includedItems: Array.isArray(row.included_items)
+      ? row.included_items as string[]
+      : typeof row.included_items === 'string'
+      ? JSON.parse(row.included_items || '[]')
+      : (row.includedItems as string[]) ?? [],
+    description: String(row.description ?? ''),
+    imageUrl: String(row.image_url ?? row.imageUrl ?? ''),
+    isActive: Boolean(row.is_active ?? row.isActive ?? true),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
+    updatedAt: String(row.updated_at ?? row.updatedAt ?? ''),
+  }
+}
+
+function toServicePayload(s: Partial<Service>) {
+  return {
+    name: s.name,
+    category: s.category,
+    duration: s.duration,
+    basePrice: s.basePrice,
+    depositRate: s.depositRate,
+    includedItems: s.includedItems,
+    description: s.description,
+    imageUrl: s.imageUrl,
+    isActive: s.isActive,
+  }
+}
+
+function toBooking(row: Record<string, unknown>): Booking {
+  return {
+    id: Number(row.id),
+    serviceId: Number(row.service_id ?? row.serviceId ?? 0),
+    customerId: Number(row.customer_id ?? row.customerId ?? 0),
+    photographerId: row.photographer_id ? Number(row.photographer_id) : row.photographerId ? Number(row.photographerId) : undefined,
+    serviceName: String(row.service_name ?? ''),
+    customerName: String(row.customer_name ?? ''),
+    date: String(row.date ?? ''),
+    timeSlot: String(row.time_slot ?? row.timeSlot ?? ''),
+    status: (row.status as Booking['status']) ?? 'pending',
+    depositPaid: Boolean(row.deposit_paid ?? row.depositPaid ?? false),
+    depositAmount: Number(row.deposit_amount ?? row.depositAmount ?? 0),
+    totalPrice: Number(row.total_price ?? row.totalPrice ?? 0),
+    notes: String(row.notes ?? ''),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
+    updatedAt: String(row.updated_at ?? row.updatedAt ?? ''),
+  }
+}
+
+function toPhoto(row: Record<string, unknown>): Photo {
+  return {
+    id: Number(row.id),
+    albumId: Number(row.album_id ?? row.albumId ?? 0),
+    url: String(row.url ?? ''),
+    thumbnailUrl: String(row.thumbnail_url ?? row.thumbnailUrl ?? ''),
+    isSelected: Boolean(row.is_selected ?? row.isSelected ?? false),
+    sortOrder: Number(row.sort_order ?? row.sortOrder ?? 0),
+    uploadedAt: String(row.uploaded_at ?? row.uploadedAt ?? ''),
+  }
+}
+
+function toAlbum(row: Record<string, unknown>): Album {
+  const photos = Array.isArray(row.photos) ? (row.photos as Record<string, unknown>[]).map(toPhoto) : []
+  return {
+    id: Number(row.id),
+    bookingId: Number(row.booking_id ?? row.bookingId ?? 0),
+    accessKey: String(row.access_key ?? row.accessKey ?? ''),
+    title: String(row.title ?? ''),
+    photos,
+    selectedCount: photos.filter(p => p.isSelected).length,
+    totalPhotos: photos.length,
+  }
+}
+
+function toReview(row: Record<string, unknown>): Review {
+  return {
+    id: Number(row.id),
+    bookingId: Number(row.booking_id ?? row.bookingId ?? 0),
+    customerId: Number(row.customer_id ?? row.customerId ?? 0),
+    customerName: String(row.customer_name ?? ''),
+    rating: Number(row.rating ?? 0),
+    content: String(row.content ?? ''),
+    tags: Array.isArray(row.tags) ? (row.tags as string[]) : typeof row.tags === 'string' ? JSON.parse(row.tags || '[]') : [],
+    isFeatured: Boolean(row.is_featured ?? row.isFeatured ?? false),
+    createdAt: String(row.created_at ?? row.createdAt ?? ''),
+  }
+}
+
+function toSchedule(row: Record<string, unknown>): ScheduleConfig {
+  return {
+    date: String(row.date ?? ''),
+    isAvailable: Boolean(row.is_available ?? row.isAvailable ?? true),
+    priceMultiplier: Number(row.price_multiplier ?? row.priceMultiplier ?? 1.0),
+    isHoliday: Boolean(row.is_holiday ?? row.isHoliday ?? false),
+    seasonType: (row.season_type as ScheduleConfig['seasonType']) ?? (row.seasonType as ScheduleConfig['seasonType']) ?? 'normal',
+    timeSlots: [],
+  }
+}
+
+function toHoliday(row: Record<string, unknown>): Holiday {
+  return {
+    id: Number(row.id),
+    date: String(row.date ?? ''),
+    name: String(row.name ?? ''),
+    priceMultiplier: Number(row.price_multiplier ?? row.priceMultiplier ?? 1.0),
+  }
+}
+
+function toSeasonPricing(row: Record<string, unknown>): SeasonPricing {
+  return {
+    seasonType: (row.season_type as SeasonPricing['seasonType']) ?? (row.seasonType as SeasonPricing['seasonType']) ?? 'normal',
+    serviceId: Number(row.service_id ?? row.serviceId ?? 0),
+    multiplier: Number(row.multiplier ?? 1.0),
+  }
+}
+
 export interface Service {
   id: number
   name: string
@@ -78,6 +200,7 @@ export interface ShootingRecord {
 export interface PhotographerNote {
   id: number
   photographerId: number
+  photographerName?: string
   content: string
   createdAt: string
 }
@@ -88,6 +211,7 @@ export interface CustomerProfile {
   phone: string
   email: string
   stylePreferences: string[]
+  bookings: Booking[]
   shootingHistory: ShootingRecord[]
   photographerNotes: PhotographerNote[]
 }
@@ -131,6 +255,8 @@ export interface Stats {
   monthlyRevenue: number
   pendingSelections: number
   reviewRate: number
+  goodReviewRate?: number
+  monthRevenue?: number
 }
 
 interface ServiceState {
@@ -138,8 +264,8 @@ interface ServiceState {
   loading: boolean
   error: string | null
   fetchServices: () => Promise<void>
-  createService: (data: Partial<Service>) => Promise<void>
-  updateService: (id: number, data: Partial<Service>) => Promise<void>
+  createService: (data: Partial<Service>) => Promise<Service>
+  updateService: (id: number, data: Partial<Service>) => Promise<Service>
   deleteService: (id: number) => Promise<void>
 }
 
@@ -150,27 +276,31 @@ export const useServiceStore = create<ServiceState>((set) => ({
   fetchServices: async () => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Service[]>('/api/services')
-      set({ services: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>('/api/services')
+      set({ services: data.map(toService), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
   },
   createService: async (data) => {
-    const item = await apiFetch<Service>('/api/services', {
+    const raw = await apiFetch<Record<string, unknown>>('/api/services', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(toServicePayload(data)),
     })
-    set((s) => ({ services: [...s.services, item] }))
+    const svc = toService(raw)
+    set((s) => ({ services: [...s.services, svc] }))
+    return svc
   },
   updateService: async (id, data) => {
-    const updated = await apiFetch<Service>(`/api/services/${id}`, {
+    const raw = await apiFetch<Record<string, unknown>>(`/api/services/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(toServicePayload(data)),
     })
-    set((s) => ({ services: s.services.map((svc) => (svc.id === id ? updated : svc)) }))
+    const svc = toService(raw)
+    set((s) => ({ services: s.services.map((svc2) => (svc2.id === id ? svc : svc2)) }))
+    return svc
   },
   deleteService: async (id) => {
     await fetch(`/api/services/${id}`, { method: 'DELETE' })
@@ -182,22 +312,41 @@ interface BookingState {
   bookings: Booking[]
   loading: boolean
   error: string | null
+  currentCustomerId: number | null
   fetchBookings: () => Promise<void>
   fetchCustomerBookings: (id: number) => Promise<void>
   fetchAvailableSlots: (date: string) => Promise<TimeSlotConfig[]>
-  createBooking: (data: Partial<Booking>) => Promise<void>
+  createBooking: (data: {
+    serviceId: number
+    date: string
+    timeSlot: string
+    notes: string
+    customerName: string
+    customerPhone: string
+    customerEmail: string
+  }) => Promise<Booking | null>
   updateBookingStatus: (id: number, status: Booking['status']) => Promise<void>
+}
+
+const getInitialCustomerId = (): number | null => {
+  try {
+    const stored = localStorage.getItem('currentCustomerId')
+    return stored ? Number(stored) : null
+  } catch {
+    return null
+  }
 }
 
 export const useBookingStore = create<BookingState>((set) => ({
   bookings: [],
   loading: false,
   error: null,
+  currentCustomerId: getInitialCustomerId(),
   fetchBookings: async () => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Booking[]>('/api/bookings')
-      set({ bookings: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>('/api/bookings')
+      set({ bookings: data.map(toBooking), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -205,8 +354,8 @@ export const useBookingStore = create<BookingState>((set) => ({
   fetchCustomerBookings: async (id) => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Booking[]>(`/api/bookings/customer/${id}`)
-      set({ bookings: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>(`/api/bookings/customer/${id}`)
+      set({ bookings: data.map(toBooking), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -214,25 +363,41 @@ export const useBookingStore = create<BookingState>((set) => ({
   fetchAvailableSlots: async (date) => {
     try {
       const raw = await apiFetch<string[]>(`/api/bookings/available-slots/list?date=${date}`)
-      return raw.map((t) => ({ startTime: t, endTime: '', isAvailable: true }))
+      return raw.map((t) => {
+        const h = Number(t.split(':')[0])
+        return { startTime: t, endTime: `${String(h + 1).padStart(2, '0')}:00`, isAvailable: true }
+      })
     } catch {
       return []
     }
   },
   createBooking: async (data) => {
-    const item = await apiFetch<Booking>('/api/bookings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    })
-    set((s) => ({ bookings: [...s.bookings, item] }))
+    try {
+      const raw = await apiFetch<Record<string, unknown>>('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const booking = toBooking(raw)
+      try {
+        localStorage.setItem('currentCustomerId', String(booking.customerId))
+      } catch {}
+      set((s) => ({
+        bookings: [...s.bookings, booking],
+        currentCustomerId: booking.customerId,
+      }))
+      return booking
+    } catch {
+      return null
+    }
   },
   updateBookingStatus: async (id, status) => {
-    const updated = await apiFetch<Booking>(`/api/bookings/${id}`, {
+    const raw = await apiFetch<Record<string, unknown>>(`/api/bookings/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     })
+    const updated = toBooking(raw)
     set((s) => ({ bookings: s.bookings.map((b) => (b.id === id ? { ...b, ...updated } : b)) }))
   },
 }))
@@ -242,7 +407,7 @@ interface AlbumState {
   loading: boolean
   error: string | null
   fetchAlbum: (accessKey: string) => Promise<void>
-  selectPhotos: (albumId: number, photoIds: number[]) => Promise<void>
+  selectPhotos: (albumId: number, photoIds: number[], selected: boolean) => Promise<void>
 }
 
 export const useAlbumStore = create<AlbumState>((set) => ({
@@ -252,24 +417,30 @@ export const useAlbumStore = create<AlbumState>((set) => ({
   fetchAlbum: async (accessKey) => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Album>(`/api/albums/${accessKey}`)
-      set({ album: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>>(`/api/albums/${accessKey}`)
+      set({ album: toAlbum(data), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
   },
-  selectPhotos: async (albumId, photoIds) => {
+  selectPhotos: async (albumId, photoIds, selected) => {
     await fetch(`/api/albums/${albumId}/photos/select`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photoIds, selected: true }),
+      body: JSON.stringify({ photoIds, selected }),
     })
     set((s) => {
       if (!s.album) return s
       const photos = s.album.photos.map((p) =>
-        photoIds.includes(p.id) ? { ...p, isSelected: !p.isSelected } : p
+        photoIds.includes(p.id) ? { ...p, isSelected: selected } : p
       )
-      return { album: { ...s.album, photos } }
+      return {
+        album: {
+          ...s.album,
+          photos,
+          selectedCount: photos.filter(p => p.isSelected).length,
+        },
+      }
     })
   },
 }))
@@ -280,6 +451,47 @@ interface CustomerState {
   error: string | null
   fetchProfile: (id: number) => Promise<void>
   updatePreferences: (id: number, prefs: string[]) => Promise<void>
+  addNote: (id: number, photographerId: number, content: string) => Promise<void>
+}
+
+function toCustomerProfile(row: Record<string, unknown>): CustomerProfile {
+  const stylePrefs = Array.isArray(row.style_preferences)
+    ? (row.style_preferences as string[])
+    : typeof row.style_preferences === 'string'
+    ? JSON.parse(row.style_preferences || '[]')
+    : (row.stylePreferences as string[]) ?? []
+  const bookings = Array.isArray(row.bookings)
+    ? (row.bookings as Record<string, unknown>[]).map(toBooking)
+    : []
+  const notesRaw = Array.isArray(row.photographerNotes)
+    ? row.photographerNotes
+    : Array.isArray(row.photographer_notes)
+    ? row.photographer_notes
+    : []
+  const photographerNotes: PhotographerNote[] = (notesRaw as Record<string, unknown>[]).map(n => ({
+    id: Number(n.id),
+    photographerId: Number(n.photographer_id ?? n.photographerId ?? 0),
+    photographerName: String(n.photographer_name ?? ''),
+    content: String(n.content ?? ''),
+    createdAt: String(n.created_at ?? n.createdAt ?? ''),
+  }))
+  const shootingHistory: ShootingRecord[] = bookings.map((b) => ({
+    bookingId: b.id,
+    serviceType: b.serviceName || '',
+    date: b.date,
+    photoCount: 0,
+    selectedCount: 0,
+  }))
+  return {
+    id: Number(row.id),
+    name: String(row.name ?? ''),
+    phone: String(row.phone ?? ''),
+    email: String(row.email ?? ''),
+    stylePreferences: stylePrefs,
+    bookings,
+    shootingHistory,
+    photographerNotes,
+  }
 }
 
 export const useCustomerStore = create<CustomerState>((set) => ({
@@ -289,8 +501,8 @@ export const useCustomerStore = create<CustomerState>((set) => ({
   fetchProfile: async (id) => {
     set({ loading: true })
     try {
-      const data = await apiFetch<CustomerProfile>(`/api/customers/${id}/profile`)
-      set({ profile: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>>(`/api/customers/${id}/profile`)
+      set({ profile: toCustomerProfile(data), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -305,6 +517,13 @@ export const useCustomerStore = create<CustomerState>((set) => ({
       profile: s.profile ? { ...s.profile, stylePreferences: prefs } : s.profile,
     }))
   },
+  addNote: async (id, photographerId, content) => {
+    await fetch(`/api/customers/${id}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photographerId, content }),
+    })
+  },
 }))
 
 interface ReviewState {
@@ -314,7 +533,7 @@ interface ReviewState {
   error: string | null
   fetchFeatured: () => Promise<void>
   fetchByService: (serviceId: number) => Promise<void>
-  submitReview: (data: Partial<Review>) => Promise<void>
+  submitReview: (data: Partial<Review> & { bookingId: number; customerId: number; rating: number }) => Promise<void>
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -325,8 +544,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   fetchFeatured: async () => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Review[]>('/api/reviews/featured')
-      set({ featuredReviews: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>('/api/reviews/featured')
+      set({ featuredReviews: data.map(toReview), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -334,8 +553,8 @@ export const useReviewStore = create<ReviewState>((set) => ({
   fetchByService: async (serviceId) => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Review[]>(`/api/reviews/service/${serviceId}`)
-      set({ reviews: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>(`/api/reviews/service/${serviceId}`)
+      set({ reviews: data.map(toReview), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -358,7 +577,7 @@ interface ScheduleState {
   fetchSchedules: (month: string) => Promise<void>
   updateSchedule: (date: string, data: Partial<ScheduleConfig>) => Promise<void>
   fetchHolidays: () => Promise<void>
-  addHoliday: (data: Partial<Holiday>) => Promise<void>
+  addHoliday: (data: Partial<Holiday> & { date: string; name: string }) => Promise<void>
   deleteHoliday: (id: number) => Promise<void>
   fetchSeasonPricing: () => Promise<void>
   updateSeasonPricing: (data: SeasonPricing[]) => Promise<void>
@@ -373,8 +592,8 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
   fetchSchedules: async (month) => {
     set({ loading: true })
     try {
-      const data = await apiFetch<ScheduleConfig[]>(`/api/schedule?month=${month}`)
-      set({ schedules: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>[]>(`/api/schedule?month=${month}`)
+      set({ schedules: data.map(toSchedule), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }
@@ -383,7 +602,12 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
     await apiFetch(`/api/schedule/${date}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        isAvailable: data.isAvailable,
+        priceMultiplier: data.priceMultiplier,
+        isHoliday: data.isHoliday,
+        seasonType: data.seasonType,
+      }),
     })
     set((s) => ({
       schedules: s.schedules.map((sc) => (sc.date === date ? { ...sc, ...data } : sc)),
@@ -391,19 +615,19 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
   },
   fetchHolidays: async () => {
     try {
-      const data = await apiFetch<Holiday[]>('/api/schedule/pricing/holidays')
-      set({ holidays: data })
+      const data = await apiFetch<Record<string, unknown>[]>('/api/schedule/pricing/holidays')
+      set({ holidays: data.map(toHoliday) })
     } catch (e: any) {
       set({ error: e.message })
     }
   },
   addHoliday: async (data) => {
-    const item = await apiFetch<Holiday>('/api/schedule/pricing/holidays', {
+    const raw = await apiFetch<Record<string, unknown>>('/api/schedule/pricing/holidays', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     })
-    set((s) => ({ holidays: [...s.holidays, item] }))
+    set((s) => ({ holidays: [...s.holidays, toHoliday(raw)] }))
   },
   deleteHoliday: async (id) => {
     await fetch(`/api/schedule/pricing/holidays/${id}`, { method: 'DELETE' })
@@ -411,8 +635,8 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
   },
   fetchSeasonPricing: async () => {
     try {
-      const data = await apiFetch<SeasonPricing[]>('/api/schedule/pricing/seasons')
-      set({ seasonPricing: data })
+      const data = await apiFetch<Record<string, unknown>[]>('/api/schedule/pricing/seasons')
+      set({ seasonPricing: data.map(toSeasonPricing) })
     } catch (e: any) {
       set({ error: e.message })
     }
@@ -434,6 +658,17 @@ interface StatsState {
   fetchStats: () => Promise<void>
 }
 
+function toStats(row: Record<string, unknown>): Stats {
+  return {
+    todayBookings: Number(row.todayBookings ?? row.today_bookings ?? 0),
+    monthlyRevenue: Number(row.monthlyRevenue ?? row.month_revenue ?? row.monthRevenue ?? 0),
+    pendingSelections: Number(row.pendingSelections ?? row.pending_selections ?? 0),
+    reviewRate: Number(row.reviewRate ?? row.goodReviewRate ?? row.good_review_rate ?? 0),
+    goodReviewRate: Number(row.goodReviewRate ?? row.good_review_rate ?? 0),
+    monthRevenue: Number(row.monthRevenue ?? row.month_revenue ?? 0),
+  }
+}
+
 export const useStatsStore = create<StatsState>((set) => ({
   stats: null,
   loading: false,
@@ -441,8 +676,8 @@ export const useStatsStore = create<StatsState>((set) => ({
   fetchStats: async () => {
     set({ loading: true })
     try {
-      const data = await apiFetch<Stats>('/api/stats')
-      set({ stats: data, loading: false })
+      const data = await apiFetch<Record<string, unknown>>('/api/stats')
+      set({ stats: toStats(data), loading: false })
     } catch (e: any) {
       set({ error: e.message, loading: false })
     }

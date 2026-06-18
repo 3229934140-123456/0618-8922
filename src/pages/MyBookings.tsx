@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Calendar, Clock, ChevronDown, ChevronUp, MapPin, Shirt, Image, MessageSquare } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Calendar, Clock, ChevronDown, ChevronUp, MapPin, Shirt, Image, MessageSquare, User } from 'lucide-react';
 import { useBookingStore } from '@/store';
 import type { Booking } from '@/store';
 
@@ -20,13 +20,16 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 export default function MyBookings() {
-  const { bookings, fetchBookings } = useBookingStore();
+  const { bookings, fetchCustomerBookings, currentCustomerId } = useBookingStore();
   const [activeTab, setActiveTab] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetchBookings();
-  }, [fetchBookings]);
+    if (currentCustomerId) {
+      fetchCustomerBookings(currentCustomerId);
+    }
+  }, [fetchCustomerBookings, currentCustomerId]);
 
   const filtered = activeTab === 'all' ? bookings : bookings.filter((b) => b.status === activeTab);
 
@@ -37,7 +40,18 @@ export default function MyBookings() {
   return (
     <div className="min-h-screen bg-ivory font-body pt-20">
       <div className="container mx-auto px-6 py-10">
-        <h1 className="font-display text-3xl text-charcoal mb-8">我的预约</h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="font-display text-3xl text-charcoal">我的预约</h1>
+          {currentCustomerId && (
+            <button
+              onClick={() => navigate(`/profile/${currentCustomerId}`)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gold/20 text-sm font-body text-charcoal/70 hover:border-gold hover:text-gold transition-colors"
+            >
+              <User className="w-4 h-4" />
+              客户档案
+            </button>
+          )}
+        </div>
 
         <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
           {TABS.map((tab) => (

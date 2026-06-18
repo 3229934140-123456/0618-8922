@@ -1,18 +1,22 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Calendar as CalendarIcon, Clock, Info } from 'lucide-react';
 import Calendar from '@/components/Calendar';
 import BookingModal from '@/components/BookingModal';
 import { useBookingStore, useServiceStore, useScheduleStore } from '@/store';
-import type { TimeSlotConfig } from '@/store';
+import type { TimeSlotConfig, Booking } from '@/store';
 
 export default function Booking() {
   const { services, fetchServices } = useServiceStore();
-  const { fetchAvailableSlots, createBooking } = useBookingStore();
+  const { fetchAvailableSlots, createBooking, currentCustomerId } = useBookingStore();
   const { schedules, fetchSchedules } = useScheduleStore();
+  const navigate = useNavigate();
 
   const [selectedDate, setSelectedDate] = useState('');
   const [timeSlots, setTimeSlots] = useState<TimeSlotConfig[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [bookedSlotsOnDay, setBookedSlotsOnDay] = useState<string[]>([]);
+  const [preselectedSlot, setPreselectedSlot] = useState('');
 
   useEffect(() => {
     fetchServices();
@@ -23,22 +27,51 @@ export default function Booking() {
 
   const handleSelectDate = async (date: string) => {
     setSelectedDate(date);
+    setBookedSlotsOnDay([]);
+    setPreselectedSlot('');
     const slots = await fetchAvailableSlots(date);
     setTimeSlots(slots);
   };
 
-  const handleBooking = async (data: { serviceId: number; date: string; timeSlot: string; notes: string }) => {
-    await createBooking({
-      serviceId: data.serviceId,
-      date: data.date,
-      timeSlot: data.timeSlot,
-      notes: data.notes,
-      customerId: 1,
-    });
+  const refreshSlots = async (date: string) => {
+    const slots = await fetchAvailableSlots(date);
+    setTimeSlots(slots);
+  };
+
+  const handleBooking = async (data: {
+    serviceId: number;
+    date: string;
+    timeSlot: string;
+    notes: string;
+    customerName: string;
+    customerPhone: string;
+    customerEmail: string;
+  }) => {
+    const booking: Booking | null = await createBooking(data);
+    const slotStart = data.timeSlot.split('-')[0];
+    setBookedSlotsOnDay((prev) => [...prev, slotStart]);
+    setPreselectedSlot('');
+    await refreshSlots(data.date);
+    return booking;
+  };
+
+  const handleCloseAfterSuccess = () => {
+    setModalOpen(false);
+    setPreselectedSlot('');
+    if (currentCustomerId) {
+      navigate('/my-bookings');
+    }
   };
 
   const selectedSchedule = schedules.find((s) => s.date === selectedDate);
-  const availableCount = timeSlots.filter((t) => t.isAvailable).length;
+  const displayedSlots = timeSlots.map((slot) => {
+    const start = slot.startTime;
+    if (bookedSlotsOnDay.includes(start)) {
+      return { ...slot, isAvailable: false };
+    }
+    return slot;
+  });
+  const availableCount = displayedSlots.filter((t) => t.isAvailable).length;
 
   return (
     <div className="min-h-screen bg-ivory font-body pt-20">
@@ -83,14 +116,42 @@ export default function Booking() {
                       <Clock className="w-4 h-4" />
                       可用时段 ({availableCount})
                     </div>
-                    {availableCount > 0 ? (
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                        {timeSlots.filter((t) => t.isAvailable).map((slot) => (
-                          <div key={slot.startTime} className="flex items-center justify-between px-3 py-2 rounded-lg bg-ivory text-sm font-body text-charcoal/70">
-                            <span>{slot.startTime} - {slot.endTime}</span>
-                            <span className="text-gold text-xs">可预约</span>
-                          </div>
-                        ))}
+                    {displayedSlots.length > 0 ? (
+                      <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                        {displayedSlots.map((slot) => {
+                          const slotKey = `${slot.startTime}-${slot.endTime}`;
+                          const isSelected = preselectedSlot === slotKey;
+                          return (
+                            <div
+                              key={slot.startTime}
+                              onClick={() => {
+                                if (slot.isAvailable) {
+                                  setPreselectedSlot(isSelected ? '' : slotKey);
+                                }
+                              }}
+                              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm font-body transition-colors ${
+                                !slot.isAvailable
+                                  ? 'bg-charcoal/5 text-charcoal/30 cursor-not-allowed'
+                                  : isSelected
+                                  ? 'bg-gold text-white shadow-sm cursor-pointer'
+                                  : 'bg-ivory text-charcoal/70 hover:bg-gold/10 hover:text-gold cursor-pointer'
+                              }`}
+                            >
+                              <span>
+                                {slot.startTime} - {slot.endTime}
+                              </span>
+                              <span className={`text-xs ${
+                                !slot.isAvailable
+                                  ? 'text-charcoal/30'
+                                  : isSelected
+                                  ? 'text-white'
+                                  : 'text-gold'
+                              }`}>
+                                {slot.isAvailable ? (isSelected ? '已选择' : '点击选择') : '已预约'}
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="text-sm font-body text-charcoal/40">暂无可用时段</p>
@@ -99,7 +160,7 @@ export default function Booking() {
 
                   <div className="flex items-start gap-2 text-xs font-body text-charcoal/40 bg-ivory p-3 rounded-lg">
                     <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <span>选择日期后点击下方按钮进入预约流程</span>
+                    <span>点击上方时段先选择时间，再点击预约按钮进入流程。预约成功后该时段自动锁定。</span>
                   </div>
 
                   <button
@@ -107,7 +168,7 @@ export default function Booking() {
                     disabled={availableCount === 0}
                     className="w-full px-4 py-2.5 rounded-lg bg-gold text-charcoal font-body font-medium hover:bg-gold/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    预约
+                    {preselectedSlot ? `预约 ${preselectedSlot}` : '预约'}
                   </button>
                 </div>
               )}
@@ -118,10 +179,12 @@ export default function Booking() {
 
       <BookingModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
+        onClose={() => { setModalOpen(false); setPreselectedSlot(''); }}
+        onCloseSuccess={handleCloseAfterSuccess}
         services={services}
         selectedDate={selectedDate}
-        timeSlots={timeSlots}
+        timeSlots={displayedSlots}
+        preselectedSlot={preselectedSlot}
         onSubmit={handleBooking}
       />
     </div>

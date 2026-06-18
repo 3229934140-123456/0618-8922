@@ -1,15 +1,33 @@
-import { useState } from 'react'
-import { X, Check, Clock, CreditCard } from 'lucide-react'
-import { useBookingStore } from '@/store'
-import type { Service, TimeSlotConfig } from '@/store'
+import { useState, useEffect } from 'react'
+import { X, Check, Clock, CreditCard, TrendingUp } from 'lucide-react'
+import type { Service, TimeSlotConfig, Booking } from '@/store'
+
+interface PricePreview {
+  basePrice: number
+  depositRate: number
+  multiplier: number
+  multiplierType: string
+  totalPrice: number
+  depositAmount: number
+}
 
 interface BookingModalProps {
   open: boolean
   onClose: () => void
+  onCloseSuccess?: () => void
   services: Service[]
   selectedDate: string
   timeSlots: TimeSlotConfig[]
-  onSubmit: (data: { serviceId: number; date: string; timeSlot: string; notes: string }) => Promise<void>
+  preselectedSlot?: string
+  onSubmit: (data: {
+    serviceId: number
+    date: string
+    timeSlot: string
+    notes: string
+    customerName: string
+    customerPhone: string
+    customerEmail: string
+  }) => Promise<Booking | null>
 }
 
 interface CustomerInfo {
@@ -24,9 +42,11 @@ const STEPS = ['选择服务', '选择时间', '填写信息', '确认支付']
 export default function BookingModal({
   open,
   onClose,
+  onCloseSuccess,
   services,
   selectedDate,
   timeSlots,
+  preselectedSlot,
   onSubmit,
 }: BookingModalProps) {
   const [step, setStep] = useState(0)
@@ -40,6 +60,34 @@ export default function BookingModal({
   })
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [pricePreview, setPricePreview] = useState<PricePreview | null>(null)
+
+  useEffect(() => {
+    if (open) {
+      if (preselectedSlot) {
+        setSelectedSlot(preselectedSlot)
+        setStep(1)
+      } else {
+        setStep(0)
+      }
+      setSubmitted(false)
+      setSubmitting(false)
+      setPricePreview(null)
+    }
+  }, [open, preselectedSlot])
+
+  useEffect(() => {
+    if (selectedService && selectedDate) {
+      fetch(`/api/bookings/price/preview?serviceId=${selectedService.id}&date=${selectedDate}`)
+        .then((r) => r.json())
+        .then((r) => {
+          if (r.success) setPricePreview(r.data)
+        })
+        .catch(() => setPricePreview(null))
+    } else {
+      setPricePreview(null)
+    }
+  }, [selectedService, selectedDate])
 
   const reset = () => {
     setStep(0)
@@ -48,11 +96,18 @@ export default function BookingModal({
     setCustomerInfo({ name: '', phone: '', email: '', notes: '' })
     setSubmitting(false)
     setSubmitted(false)
+    setPricePreview(null)
   }
 
   const handleClose = () => {
     reset()
     onClose()
+  }
+
+  const handleSubmittedClose = () => {
+    reset()
+    if (onCloseSuccess) onCloseSuccess()
+    else onClose()
   }
 
   const canNext = () => {
@@ -74,19 +129,35 @@ export default function BookingModal({
     if (!selectedService || !selectedSlot) return
     setSubmitting(true)
     try {
-      await onSubmit({
+      const result = await onSubmit({
         serviceId: selectedService.id,
         date: selectedDate,
         timeSlot: selectedSlot,
         notes: customerInfo.notes,
+        customerName: customerInfo.name,
+        customerPhone: customerInfo.phone,
+        customerEmail: customerInfo.email,
       })
-      setSubmitted(true)
+      if (result) setSubmitted(true)
     } finally {
       setSubmitting(false)
     }
   }
 
   if (!open) return null
+
+  const displayBasePrice = pricePreview ? pricePreview.basePrice : selectedService?.basePrice || 0
+  const displayTotalPrice = pricePreview ? pricePreview.totalPrice : displayBasePrice
+  const displayDeposit = pricePreview ? pricePreview.depositAmount : Math.round(displayBasePrice * (selectedService?.depositRate || 0.3) * 100) / 100
+  const displayMultiplier = pricePreview ? pricePreview.multiplier : 1.0
+  const multiplierLabel: Record<string, string> = {
+    holiday: '节假日',
+    peak: '旺季',
+    off_peak: '淡季',
+    schedule: '档期调整',
+    normal: '平日',
+  }
+  const displayMultiplierLabel = pricePreview ? multiplierLabel[pricePreview.multiplierType] || '平日' : '平日'
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -144,10 +215,10 @@ export default function BookingModal({
                 预约成功！
               </h3>
               <p className="text-charcoal/60 mb-6">
-                我们会尽快确认您的预约，请留意手机通知
+                客户信息已保存，您可以在「我的预约」中查看详情
               </p>
               <button
-                onClick={handleClose}
+                onClick={handleSubmittedClose}
                 className="px-8 py-3 bg-gradient-to-r from-gold to-gold-light text-white rounded-lg font-medium hover:opacity-90 transition-opacity"
               >
                 完成
@@ -161,27 +232,50 @@ export default function BookingModal({
                     选择服务类型
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
-                    {services.map((service) => (
-                      <button
-                        key={service.id}
-                        onClick={() => setSelectedService(service)}
-                        className={`p-4 rounded-xl text-left transition-all border-2 ${
-                          selectedService?.id === service.id
-                            ? 'border-gold bg-gold/5 shadow-md'
-                            : 'border-transparent bg-white hover:border-gold/30 hover:shadow-sm'
-                        }`}
-                      >
-                        <p className="font-medium text-charcoal text-sm mb-1">{service.name}</p>
-                        <p className="text-xs text-charcoal/50 mb-2">{service.category}</p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-gold font-semibold">¥{service.basePrice}</span>
-                          <span className="flex items-center gap-1 text-xs text-charcoal/40">
-                            <Clock className="w-3 h-3" />
-                            {service.duration}分钟
-                          </span>
-                        </div>
-                      </button>
-                    ))}
+                    {services.map((service) => {
+                      const isSel = selectedService?.id === service.id
+                      const isPreview = isSel && pricePreview
+                      const showMultiplier = isPreview && pricePreview!.multiplier !== 1.0
+                      return (
+                        <button
+                          key={service.id}
+                          onClick={() => setSelectedService(service)}
+                          className={`p-4 rounded-xl text-left transition-all border-2 ${
+                            isSel
+                              ? 'border-gold bg-gold/5 shadow-md'
+                              : 'border-transparent bg-white hover:border-gold/30 hover:shadow-sm'
+                          }`}
+                        >
+                          <p className="font-medium text-charcoal text-sm mb-1">{service.name}</p>
+                          <p className="text-xs text-charcoal/50 mb-2">
+                            {service.category === 'id_photo'
+                              ? '证件照'
+                              : service.category === 'portrait'
+                              ? '写真'
+                              : service.category === 'commercial'
+                              ? '商业产品'
+                              : '婚纱预拍'}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-gold font-semibold">
+                                ¥{isPreview ? pricePreview!.totalPrice : service.basePrice}
+                              </span>
+                              {showMultiplier && (
+                                <span className="ml-1 text-[10px] text-gold/70 inline-flex items-center gap-0.5">
+                                  <TrendingUp className="w-2.5 h-2.5" />
+                                  {displayMultiplierLabel}×{pricePreview!.multiplier.toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="flex items-center gap-1 text-xs text-charcoal/40">
+                              <Clock className="w-3 h-3" />
+                              {service.duration}分钟
+                            </span>
+                          </div>
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -199,23 +293,29 @@ export default function BookingModal({
                       可用时段
                     </label>
                     <div className="grid grid-cols-3 gap-2">
-                      {timeSlots.map((slot) => (
-                        <button
-                          key={slot.startTime}
-                          disabled={!slot.isAvailable}
-                          onClick={() => setSelectedSlot(`${slot.startTime}-${slot.endTime}`)}
-                          className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
-                            !slot.isAvailable
-                              ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                              : selectedSlot === `${slot.startTime}-${slot.endTime}`
-                              ? 'bg-gold text-white shadow-sm'
-                              : 'bg-white text-charcoal border border-charcoal/10 hover:border-gold'
-                          }`}
-                        >
-                          {slot.startTime}-{slot.endTime}
-                        </button>
-                      ))}
+                      {timeSlots.map((slot) => {
+                        const slotKey = `${slot.startTime}-${slot.endTime}`
+                        return (
+                          <button
+                            key={slotKey}
+                            disabled={!slot.isAvailable}
+                            onClick={() => setSelectedSlot(slotKey)}
+                            className={`py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
+                              !slot.isAvailable
+                                ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                : selectedSlot === slotKey
+                                ? 'bg-gold text-white shadow-sm'
+                                : 'bg-white text-charcoal border border-charcoal/10 hover:border-gold'
+                            }`}
+                          >
+                            {slot.startTime}-{slot.endTime}
+                          </button>
+                        )
+                      })}
                     </div>
+                    {timeSlots.length === 0 && (
+                      <p className="text-sm text-charcoal/40 text-center py-4">当日暂无可用时段</p>
+                    )}
                   </div>
                 </div>
               )}
@@ -312,23 +412,50 @@ export default function BookingModal({
                       <span className="text-charcoal/50">联系电话</span>
                       <span className="text-charcoal font-medium">{customerInfo.phone}</span>
                     </div>
+                    {customerInfo.email && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-charcoal/50">邮箱</span>
+                        <span className="text-charcoal font-medium">{customerInfo.email}</span>
+                      </div>
+                    )}
                     {customerInfo.notes && (
                       <div className="flex justify-between text-sm">
                         <span className="text-charcoal/50">备注</span>
-                        <span className="text-charcoal font-medium">{customerInfo.notes}</span>
+                        <span className="text-charcoal font-medium max-w-[60%] text-right">
+                          {customerInfo.notes}
+                        </span>
                       </div>
                     )}
-                    <div className="border-t border-charcoal/10 pt-3 flex justify-between">
-                      <span className="text-charcoal/50 text-sm">定金</span>
-                      <span className="text-gold font-display text-xl font-semibold">
-                        ¥{selectedService ? Math.round(selectedService.basePrice * selectedService.depositRate) : 0}
-                      </span>
+                    <div className="border-t border-charcoal/10 pt-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-charcoal/50">基础价格</span>
+                        <span className="text-charcoal">¥{displayBasePrice}</span>
+                      </div>
+                      {displayMultiplier !== 1.0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-charcoal/50 inline-flex items-center gap-1">
+                            <TrendingUp className="w-3 h-3" />
+                            {displayMultiplierLabel}倍率
+                          </span>
+                          <span className="text-gold">×{displayMultiplier.toFixed(2)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-charcoal/50">总价</span>
+                        <span className="text-charcoal font-medium">¥{displayTotalPrice}</span>
+                      </div>
+                      <div className="flex justify-between pt-2 border-t border-charcoal/10">
+                        <span className="text-charcoal/50 text-sm">
+                          定金 ({Math.round((selectedService?.depositRate || 0.3) * 100)}%)
+                        </span>
+                        <span className="text-gold font-display text-xl font-semibold">¥{displayDeposit}</span>
+                      </div>
                     </div>
                   </div>
                   <div className="mt-4 p-3 bg-warm-gray rounded-lg flex items-center gap-2">
                     <CreditCard className="w-4 h-4 text-charcoal/40" />
                     <span className="text-xs text-charcoal/50">
-                      支付定金后将为您保留档期，余款在拍摄当天支付
+                      支付定金后将为您保留档期，余款 ¥{(displayTotalPrice - displayDeposit).toFixed(2)} 在拍摄当天支付
                     </span>
                   </div>
                 </div>

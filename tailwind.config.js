@@ -8,9 +8,18 @@ export default {
     },
     extend: {
       colors: {
-        charcoal: "#1a1a1a",
-        gold: "#C9A96E",
+        charcoal: {
+          DEFAULT: "#1a1a1a",
+          light: "#2a2a2a",
+        },
+        gold: {
+          DEFAULT: "#C9A96E",
+          light: "#D9BB85",
+        },
         ivory: "#FAFAF5",
+        warm: {
+          gray: "#F2EDE4",
+        },
       },
       fontFamily: {
         display: ["Playfair Display", "serif"],
