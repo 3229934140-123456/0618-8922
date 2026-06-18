@@ -17,6 +17,7 @@ export default function Booking() {
   const [modalOpen, setModalOpen] = useState(false);
   const [bookedSlotsOnDay, setBookedSlotsOnDay] = useState<string[]>([]);
   const [preselectedSlot, setPreselectedSlot] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     fetchServices();
@@ -47,12 +48,19 @@ export default function Booking() {
     customerPhone: string;
     customerEmail: string;
   }) => {
-    const booking: Booking | null = await createBooking(data);
+    setErrorMessage('');
+    const result = await createBooking(data);
+    if (!result.booking) {
+      setErrorMessage(result.error || '该时段已被预约，请选择其他时间');
+      setPreselectedSlot('');
+      await refreshSlots(data.date);
+      return { booking: null, error: result.error };
+    }
     const slotStart = data.timeSlot.split('-')[0];
     setBookedSlotsOnDay((prev) => [...prev, slotStart]);
     setPreselectedSlot('');
     await refreshSlots(data.date);
-    return booking;
+    return { booking: result.booking, error: undefined };
   };
 
   const handleCloseAfterSuccess = () => {

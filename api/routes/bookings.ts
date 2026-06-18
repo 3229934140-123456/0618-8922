@@ -121,7 +121,7 @@ router.post('/', (req: Request, res: Response): void => {
     let multiplier = 1.0
 
     const holiday = db.prepare('SELECT price_multiplier FROM holidays WHERE date = ?').get(date) as { price_multiplier: number } | undefined
-    if (holiday && holiday.price_multiplier > 1) {
+    if (holiday && holiday.price_multiplier !== 1) {
       multiplier = holiday.price_multiplier
     } else {
       const schedule = db.prepare('SELECT season_type, price_multiplier FROM schedule_configs WHERE date = ?').get(date) as
@@ -131,13 +131,13 @@ router.post('/', (req: Request, res: Response): void => {
       let seasonType = schedule?.season_type || 'normal'
       const scheduleMultiplier = schedule?.price_multiplier || 1
 
-      if (scheduleMultiplier > 1) {
+      if (scheduleMultiplier !== 1) {
         multiplier = scheduleMultiplier
       } else {
         const seasonPricing = db
           .prepare('SELECT multiplier FROM season_pricing WHERE season_type = ? AND service_id = ?')
           .get(seasonType, serviceId) as { multiplier: number } | undefined
-        if (seasonPricing && seasonPricing.multiplier > 1) {
+        if (seasonPricing && seasonPricing.multiplier !== 1) {
           multiplier = seasonPricing.multiplier
         }
       }
@@ -152,8 +152,8 @@ router.post('/', (req: Request, res: Response): void => {
 
     const result = db.prepare(`
       INSERT INTO bookings (
-        service_id, customer_id, date, time_slot, status, deposit_paid, deposit_amount, total_price, notes
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        service_id, customer_id, date, time_slot, status, deposit_paid, deposit_amount, total_price, price_multiplier, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       serviceId,
       customerId,
@@ -163,6 +163,7 @@ router.post('/', (req: Request, res: Response): void => {
       1,
       depositAmount,
       totalPrice,
+      multiplier,
       notes ?? null,
     )
 

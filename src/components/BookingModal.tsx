@@ -27,7 +27,7 @@ interface BookingModalProps {
     customerName: string
     customerPhone: string
     customerEmail: string
-  }) => Promise<Booking | null>
+  }) => Promise<{ booking: Booking | null; error?: string }>
 }
 
 interface CustomerInfo {
@@ -61,15 +61,14 @@ export default function BookingModal({
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [pricePreview, setPricePreview] = useState<PricePreview | null>(null)
+  const [submitError, setSubmitError] = useState('')
 
   useEffect(() => {
     if (open) {
       if (preselectedSlot) {
         setSelectedSlot(preselectedSlot)
-        setStep(1)
-      } else {
-        setStep(0)
       }
+      setStep(0)
       setSubmitted(false)
       setSubmitting(false)
       setPricePreview(null)
@@ -97,6 +96,7 @@ export default function BookingModal({
     setSubmitting(false)
     setSubmitted(false)
     setPricePreview(null)
+    setSubmitError('')
   }
 
   const handleClose = () => {
@@ -128,6 +128,7 @@ export default function BookingModal({
   const handleSubmit = async () => {
     if (!selectedService || !selectedSlot) return
     setSubmitting(true)
+    setSubmitError('')
     try {
       const result = await onSubmit({
         serviceId: selectedService.id,
@@ -138,7 +139,13 @@ export default function BookingModal({
         customerPhone: customerInfo.phone,
         customerEmail: customerInfo.email,
       })
-      if (result) setSubmitted(true)
+      if (result.booking) {
+        setSubmitted(true)
+      } else {
+        setSubmitError(result.error || '预约失败，请重试')
+      }
+    } catch (e: any) {
+      setSubmitError(e.message || '预约失败，请重试')
     } finally {
       setSubmitting(false)
     }
@@ -458,6 +465,12 @@ export default function BookingModal({
                       支付定金后将为您保留档期，余款 ¥{(displayTotalPrice - displayDeposit).toFixed(2)} 在拍摄当天支付
                     </span>
                   </div>
+                </div>
+              )}
+
+              {step === 3 && submitError && (
+                <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm font-body text-center">
+                  {submitError}
                 </div>
               )}
 

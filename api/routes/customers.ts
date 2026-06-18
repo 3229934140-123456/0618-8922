@@ -32,7 +32,30 @@ router.get('/:id/profile', (req: Request, res: Response): void => {
       JOIN services s ON b.service_id = s.id
       WHERE b.customer_id = ?
       ORDER BY b.date DESC
-    `).all(req.params.id)
+    `).all(req.params.id) as Record<string, unknown>[]
+
+    for (const booking of bookings) {
+      const album = db.prepare('SELECT * FROM albums WHERE booking_id = ?').get(booking.id as number) as Record<string, unknown> | undefined
+      if (album) {
+        const photoStats = db.prepare(`
+          SELECT
+            COUNT(*) as total_photos,
+            SUM(CASE WHEN is_selected = 1 THEN 1 ELSE 0 END) as selected_photos
+          FROM photos WHERE album_id = ?
+        `).get(album.id as number) as { total_photos: number; selected_photos: number }
+        booking.album_id = album.id
+        booking.album_title = album.title
+        booking.album_access_key = album.access_key
+        booking.total_photos = photoStats.total_photos || 0
+        booking.selected_photos = photoStats.selected_photos || 0
+      } else {
+        booking.album_id = null
+        booking.album_title = null
+        booking.album_access_key = null
+        booking.total_photos = 0
+        booking.selected_photos = 0
+      }
+    }
 
     const notes = db.prepare(`
       SELECT pn.*, c.name as photographer_name

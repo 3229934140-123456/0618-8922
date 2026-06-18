@@ -95,6 +95,7 @@ export async function initializeApp(): Promise<express.Application> {
       deposit_paid INTEGER NOT NULL DEFAULT 0,
       deposit_amount REAL NOT NULL DEFAULT 0,
       total_price REAL NOT NULL DEFAULT 0,
+      price_multiplier REAL NOT NULL DEFAULT 1.0,
       notes TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -156,6 +157,9 @@ export async function initializeApp(): Promise<express.Application> {
   const { getDb } = await import('./db.js')
   const db = getDb()
   db.exec(ddl)
+  try {
+    db.exec('ALTER TABLE bookings ADD COLUMN price_multiplier REAL NOT NULL DEFAULT 1.0')
+  } catch { /* 字段已存在则忽略 */ }
   db.save()
 
   seedDatabase()

@@ -21,8 +21,10 @@ interface StatementResult {
 class WrappedStatement {
   private sql: string
   private db: SqlJsDatabase
+  private wrapper: WrappedDatabase
 
-  constructor(db: SqlJsDatabase, sql: string) {
+  constructor(wrapper: WrappedDatabase, db: SqlJsDatabase, sql: string) {
+    this.wrapper = wrapper
     this.db = db
     this.sql = sql
   }
@@ -59,10 +61,14 @@ class WrappedStatement {
     const lastInsertRowid = rowidResult.length > 0 && rowidResult[0].values.length > 0
       ? Number(rowidResult[0].values[0][0])
       : 0
-    return {
+    const result = {
       lastInsertRowid,
       changes: this.db.getRowsModified(),
     }
+    if (result.changes > 0) {
+      this.wrapper.scheduleSave()
+    }
+    return result
   }
 }
 
@@ -75,7 +81,7 @@ class WrappedDatabase {
   }
 
   prepare(sql: string): WrappedStatement {
-    return new WrappedStatement(this.db, sql)
+    return new WrappedStatement(this, this.db, sql)
   }
 
   exec(sql: string): void {
@@ -104,7 +110,7 @@ class WrappedDatabase {
     }) as T
   }
 
-  private scheduleSave(): void {
+  scheduleSave(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => this.save(), 100)
   }

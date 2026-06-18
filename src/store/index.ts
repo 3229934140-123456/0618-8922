@@ -50,13 +50,18 @@ function toBooking(row: Record<string, unknown>): Booking {
     customerId: Number(row.customer_id ?? row.customerId ?? 0),
     photographerId: row.photographer_id ? Number(row.photographer_id) : row.photographerId ? Number(row.photographerId) : undefined,
     serviceName: String(row.service_name ?? ''),
+    serviceCategory: row.service_category ? String(row.service_category) : undefined,
+    basePrice: row.base_price !== undefined ? Number(row.base_price) : undefined,
     customerName: String(row.customer_name ?? ''),
+    customerPhone: row.customer_phone ? String(row.customer_phone) : undefined,
+    customerEmail: row.customer_email ? String(row.customer_email) : undefined,
     date: String(row.date ?? ''),
     timeSlot: String(row.time_slot ?? row.timeSlot ?? ''),
     status: (row.status as Booking['status']) ?? 'pending',
     depositPaid: Boolean(row.deposit_paid ?? row.depositPaid ?? false),
     depositAmount: Number(row.deposit_amount ?? row.depositAmount ?? 0),
     totalPrice: Number(row.total_price ?? row.totalPrice ?? 0),
+    priceMultiplier: Number(row.price_multiplier ?? row.priceMultiplier ?? 1.0),
     notes: String(row.notes ?? ''),
     createdAt: String(row.created_at ?? row.createdAt ?? ''),
     updatedAt: String(row.updated_at ?? row.updatedAt ?? ''),
@@ -151,13 +156,18 @@ export interface Booking {
   customerId: number
   photographerId?: number
   serviceName?: string
+  serviceCategory?: string
+  basePrice?: number
   customerName?: string
+  customerPhone?: string
+  customerEmail?: string
   date: string
   timeSlot: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   depositPaid: boolean
   depositAmount: number
   totalPrice: number
+  priceMultiplier: number
   notes: string
   createdAt: string
   updatedAt: string
@@ -324,7 +334,7 @@ interface BookingState {
     customerName: string
     customerPhone: string
     customerEmail: string
-  }) => Promise<Booking | null>
+  }) => Promise<{ booking: Booking | null; error?: string }>
   updateBookingStatus: (id: number, status: Booking['status']) => Promise<void>
 }
 
@@ -373,12 +383,16 @@ export const useBookingStore = create<BookingState>((set) => ({
   },
   createBooking: async (data) => {
     try {
-      const raw = await apiFetch<Record<string, unknown>>('/api/bookings', {
+      const res = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       })
-      const booking = toBooking(raw)
+      const json = await res.json()
+      if (!res.ok || !json.success) {
+        return { booking: null, error: json.error || '预约失败' }
+      }
+      const booking = toBooking(json.data)
       try {
         localStorage.setItem('currentCustomerId', String(booking.customerId))
       } catch {}
@@ -386,9 +400,9 @@ export const useBookingStore = create<BookingState>((set) => ({
         bookings: [...s.bookings, booking],
         currentCustomerId: booking.customerId,
       }))
-      return booking
-    } catch {
-      return null
+      return { booking, error: undefined }
+    } catch (e: any) {
+      return { booking: null, error: e.message || '网络错误' }
     }
   },
   updateBookingStatus: async (id, status) => {
@@ -460,9 +474,10 @@ function toCustomerProfile(row: Record<string, unknown>): CustomerProfile {
     : typeof row.style_preferences === 'string'
     ? JSON.parse(row.style_preferences || '[]')
     : (row.stylePreferences as string[]) ?? []
-  const bookings = Array.isArray(row.bookings)
-    ? (row.bookings as Record<string, unknown>[]).map(toBooking)
+  const rawBookings = Array.isArray(row.bookings)
+    ? (row.bookings as Record<string, unknown>[])
     : []
+  const bookings = rawBookings.map(toBooking)
   const notesRaw = Array.isArray(row.photographerNotes)
     ? row.photographerNotes
     : Array.isArray(row.photographer_notes)
@@ -475,13 +490,16 @@ function toCustomerProfile(row: Record<string, unknown>): CustomerProfile {
     content: String(n.content ?? ''),
     createdAt: String(n.created_at ?? n.createdAt ?? ''),
   }))
-  const shootingHistory: ShootingRecord[] = bookings.map((b) => ({
-    bookingId: b.id,
-    serviceType: b.serviceName || '',
-    date: b.date,
-    photoCount: 0,
-    selectedCount: 0,
-  }))
+  const shootingHistory: ShootingRecord[] = rawBookings.map((raw, idx) => {
+    const b = bookings[idx]
+    return {
+      bookingId: b.id,
+      serviceType: b.serviceName || '',
+      date: b.date,
+      photoCount: Number(raw.total_photos ?? 0),
+      selectedCount: Number(raw.selected_photos ?? 0),
+    }
+  })
   return {
     id: Number(row.id),
     name: String(row.name ?? ''),
